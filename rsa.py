@@ -1,3 +1,4 @@
+import argparse
 import random
 
 # Compute greatest common divisor (GCD)
@@ -56,12 +57,12 @@ def generate_large_prime(bits=128):
             return num
 
 # RSA Key Generation
-def generate_rsa_keys():
-    p = generate_large_prime()
-    q = generate_large_prime()
+def generate_rsa_keys(prime_size=128):
+    p = generate_large_prime(prime_size)
+    q = generate_large_prime(prime_size)
 
     while q == p:
-        q = generate_large_prime()
+        q = generate_large_prime(prime_size)
 
     n = p * q
     phi_n = (p - 1) * (q - 1)
@@ -77,7 +78,7 @@ def generate_rsa_keys():
     
     return public_key, private_key
 
-# ✅ FIXED: Convert a string or bytes to an integer
+# Convert a string or bytes to an integer
 def text_to_int(text):
     if isinstance(text, str):
         return int.from_bytes(text.encode('utf-8'), 'big')
@@ -86,7 +87,7 @@ def text_to_int(text):
     else:
         raise TypeError("Input must be str or bytes")
 
-# ✅ FIXED: Convert an integer back to a string
+# Convert an integer back to a string
 def int_to_text(number):
     try:
         return number.to_bytes((number.bit_length() + 7) // 8, 'big').decode('utf-8')
@@ -95,8 +96,8 @@ def int_to_text(number):
 
 # RSA Encryption
 def encrypt(message, public_key):
-    e, n = public_key  # Ensure public_key is a tuple (e, n)
-    message_int = text_to_int(message)  # Convert to int
+    e, n = public_key
+    message_int = text_to_int(message)
     cipher = pow(message_int, e, n)
     return cipher
 
@@ -106,17 +107,34 @@ def decrypt(cipher, private_key):
     message_int = pow(cipher, d, n)
     return int_to_text(message_int)
 
-# ✅ TESTING RSA IMPLEMENTATION
+# Handle command-line arguments
+def main():
+    parser = argparse.ArgumentParser(description="RSA Encryption/Decryption Tool")
+    parser.add_argument("-gen", metavar="MESSAGE", type=str, help="Generate RSA keys and encrypt the given message")
+    parser.add_argument("-prime_size", metavar="BITS", type=int, default=128, help="Bit size of prime numbers (default: 128)")
+    parser.add_argument("-help", action="store_true", help="Display help message")
+
+    args = parser.parse_args()
+
+    if args.help:
+        parser.print_help()
+        return
+
+    if args.gen:
+        prime_size = args.prime_size
+        message = args.gen
+
+        print(f"\n🔐 Generating RSA keys with {prime_size}-bit primes...")
+        public_key, private_key = generate_rsa_keys(prime_size)
+        print("Public Key:", public_key)
+        print("Private Key:", private_key)
+
+        print("\n📜 Original Message:", message)
+        cipher_text = encrypt(message, public_key)
+        print("🔒 Encrypted:", cipher_text)
+
+        decrypted_message = decrypt(cipher_text, private_key)
+        print("🔓 Decrypted:", decrypted_message)
+
 if __name__ == "__main__":
-    public_key, private_key = generate_rsa_keys()
-    print("Public Key:", public_key)
-    print("Private Key:", private_key)
-
-    message = "University of Ottawa"
-    print("\nOriginal Message:", message)
-
-    cipher_text = encrypt(message, public_key)
-    print("Encrypted:", cipher_text)
-
-    decrypted_message = decrypt(cipher_text, private_key)
-    print("Decrypted:", decrypted_message)
+    main()
