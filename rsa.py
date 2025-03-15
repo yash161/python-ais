@@ -77,18 +77,26 @@ def generate_rsa_keys():
     
     return public_key, private_key
 
-# Convert a string to an integer
+# ✅ FIXED: Convert a string or bytes to an integer
 def text_to_int(text):
-    return int.from_bytes(text.encode('utf-8'), 'big')
+    if isinstance(text, str):
+        return int.from_bytes(text.encode('utf-8'), 'big')
+    elif isinstance(text, bytes):
+        return int.from_bytes(text, 'big')
+    else:
+        raise TypeError("Input must be str or bytes")
 
-# Convert an integer back to a string
+# ✅ FIXED: Convert an integer back to a string
 def int_to_text(number):
-    return number.to_bytes((number.bit_length() + 7) // 8, 'big').decode('utf-8')
+    try:
+        return number.to_bytes((number.bit_length() + 7) // 8, 'big').decode('utf-8')
+    except UnicodeDecodeError:
+        return "[DECODE ERROR]"
 
 # RSA Encryption
 def encrypt(message, public_key):
-    e, n = public_key
-    message_int = text_to_int(message)
+    e, n = public_key  # Ensure public_key is a tuple (e, n)
+    message_int = text_to_int(message)  # Convert to int
     cipher = pow(message_int, e, n)
     return cipher
 
@@ -98,16 +106,17 @@ def decrypt(cipher, private_key):
     message_int = pow(cipher, d, n)
     return int_to_text(message_int)
 
-# Test RSA implementation
-public_key, private_key = generate_rsa_keys()
-print("Public Key:", public_key)
-print("Private Key:", private_key)
+# ✅ TESTING RSA IMPLEMENTATION
+if __name__ == "__main__":
+    public_key, private_key = generate_rsa_keys()
+    print("Public Key:", public_key)
+    print("Private Key:", private_key)
 
-message = "hello yash here"
-print("Original Message:", message)
+    message = "University of Ottawa"
+    print("\nOriginal Message:", message)
 
-cipher_text = encrypt(message, public_key)
-print("Encrypted:", cipher_text)
+    cipher_text = encrypt(message, public_key)
+    print("Encrypted:", cipher_text)
 
-decrypted_message = decrypt(cipher_text, private_key)
-print("Decrypted:", decrypted_message)
+    decrypted_message = decrypt(cipher_text, private_key)
+    print("Decrypted:", decrypted_message)

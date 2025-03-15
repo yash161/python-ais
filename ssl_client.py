@@ -1,91 +1,124 @@
 import socket
-import os
+import re
 import sys
-import ast
-from rsa import generate_rsa_keys, encrypt, decrypt, text_to_int, int_to_text, generate_one_time_key, encode_packet, decode_packet
+import argparse
+from rsa import encrypt, decrypt
+from hash import calculate_checksum, pack_message, unpack_message
+from one_time import generate_one_time_key, encode_packet, decode_packet
 
-# Load user credentials from file
-def load_user_credentials(file_path):
-    credentials = {}
+def load_keys(filename):
+    with open(filename, 'r') as file:
+        content = file.read()
+        match = re.search(r'\{(\d+),(\d+)\}', content)
+        print("match",match)
+        # if match:
+        #     d, n = match.groups()
+        #     return {'d': int(d), 'n': int(n)}
+    return None
+def load_users(filename):
+    with open(filename, 'r') as file:
+        content = file.read()
+        match = re.search(r'company=([^\n]+)', content)  # Capture everything after 'company='
+        if match:
+            company_name = match.group(1)  # Extract the matched company name
+            print("MATCH:", match)  # Debug print
+            print("Extracted Company Name:", company_name)  # Print extracted value
+            return {"company":company_name}
+    return {}
+
+
+def load_server_public_key(filename):
+    with open(filename, 'r') as file:
+        content = file.read()
+        match = re.search(r'server\.public_key=\{(\d+),(\d+)\}', content)
+        if match:
+            e, n = match.groups()
+            return {'e': int(e), 'n': int(n)}
+    return None
+
+def main():
+    print("args", sys.argv)
+
+    # Update argument parsing to handle both named and positional arguments
+    parser = argparse.ArgumentParser(description="SSL client example")
+    parser.add_argument('--server_users', type=str, required=True, help="Path to the users file")
+    parser.add_argument('--server_port', type=int, required=True, help="Port for the server")
+    parser.add_argument('server_address', type=str, help="Server address (e.g., localhost)")
+    parser.add_argument('username', type=str, help="Username to authenticate with")
+
+
+    args = parser.parse_args()
+
+    users_file = args.server_users
+    port = args.server_port
+    server_address = args.server_address
+    username = args.username
+
+    users = load_users(users_file)
+    server_public_key = load_server_public_key(users_file)
+
+    print(f"Users: {users} and Server Public Key: {server_public_key}")
+
+    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_address_tuple = (server_address, port)
+    client_socket.connect(server_address_tuple)
+
     try:
-        with open(file_path, "r") as file:
-            for line in file:
-                if line.startswith("private_key"):
-                    private_key = ast.literal_eval(line.split('=')[1].strip())
-                if line.startswith("company"):
-                    company = line.split('=')[1].strip()
-                if line.startswith("server.public_key"):
-                    server_public_key = ast.literal_eval(line.split('=')[1].strip())
-        return private_key, company, server_public_key
-    except FileNotFoundError:
-        print(f"Error: {file_path} not found!")
-        sys.exit(1)
+        print(f"users:{users}")
+        # For handshake, you'd normally have some authentication of users
+        company = next(iter(users.values()), None)
+        print(company)
+        if company is None:
+            print("User not found in the users file.")
+            client_socket.close()
+            exit()
 
-# Authenticate the user
-def authenticate_user(username, password, credentials):
-    if username in credentials and credentials[username] == password:
-        return True
-    return False
+        one_time_key = generate_one_time_key(len(username))
 
-def ssl_handshake(client_socket):
-    # Send the client’s one-time key
-    one_time_key_length = 128
-    one_time_key = os.urandom(one_time_key_length)
-    client_socket.send(one_time_key)
+        # Encrypting the data to send to the server
+        encrypted_username = encrypt(username, (server_public_key["e"], server_public_key["n"]))
+        encrypted_company = encrypt(company,(server_public_key["e"], server_public_key["n"]))
 
-    # Receive the server’s one-time key
-    server_one_time_key = client_socket.recv(1024)
+        encrypted_key = encrypt(one_time_key, (server_public_key["e"], server_public_key["n"]))
+        print(f"Sending Data : {encrypted_username} compan:{encrypted_company} and key:{encrypted_key}")
+        handshake_data = b'||'.join([encrypted_username.to_bytes((encrypted_username.bit_length() + 7) // 8, 'big'),
+                                     encrypted_company.to_bytes((encrypted_company.bit_length() + 7) // 8, 'big'),
+                                     encrypted_key.to_bytes((encrypted_key.bit_length() + 7) // 8, 'big')])
 
-    return server_one_time_key, one_time_key
+        client_socket.sendall(handshake_data)
 
-def start_client():
-    # Retrieve the command-line arguments
-    username = sys.argv[1]  # Username
-    port = int(sys.argv[2])  # Port number
-    users_file = sys.argv[3]  # Path to users file
+        ack = client_socket.recv(1024)
+        if ack != b'ACK':
+            print("Handshake failed!")
+            client_socket.close()
+            exit()
 
-    # Load user credentials
-    user_credentials, company, server_public_key = load_user_credentials(users_file)
+        # Proceed with message exchange
+        message = input("Enter the message to send: ")
+        message_bytes = message.encode()
 
-    # Check if user exists
-    if username not in user_credentials:
-        print("Authentication failed: User not found.")
-        sys.exit(1)
+        # Generate a one-time key for the message
+        one_time_key = generate_one_time_key(len(message_bytes))
+        encoded_message = encode_packet(message_bytes, one_time_key)
 
-    password = input("Enter password: ")
+        # Calculate and append the checksum
+        checksum = calculate_checksum(message_bytes, 123, 31, 2)
+        packed_message = pack_message(encoded_message, 123, 31, 2)
 
-    # Authenticate the user
-    if not authenticate_user(username, password, user_credentials):
-        print("Authentication failed: Incorrect password.")
-        sys.exit(1)
+        # Encrypt the packed message
+        encrypted_message = encrypt(packed_message, (server_public_key["e"], server_public_key["n"]))
+        client_socket.sendall(encrypted_message.to_bytes((encrypted_message.bit_length() + 7) // 8, 'big'))
 
-    # Client connection setup
-    client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    client.connect(("localhost", port))
-    print("Connected to server.")
+        # Receive the modified encrypted data
+        encrypted_modified_data = client_socket.recv(1024)
+        modified_data = decrypt(int.from_bytes(encrypted_modified_data, 'big'), (server_public_key["e"], server_public_key["n"]))
 
-    # Perform SSL handshake and exchange keys
-    server_key, client_key = ssl_handshake(client)
-    print(f"Server's One-Time Key received: {server_key}")
+        # Decode the modified data using the one-time key
+        decoded_modified_data = decode_packet(modified_data, one_time_key).decode()
+        print(f"Received modified data: {decoded_modified_data}")
 
-    # Read message from the keyboard
-    message = input("Enter message to send to server: ")
-
-    # Encrypt the message with the one-time key and send it
-    encrypted_message = encode_packet(message.encode(), client_key)
-    client.send(encrypted_message)
-    print(f"Sent encrypted message: {encrypted_message}")
-
-    # Receive the encrypted response from the server
-    encrypted_response = client.recv(1024)
-    print(f"Received encrypted response: {encrypted_response}")
-
-    # Decrypt the response using the one-time key
-    decrypted_response = decode_packet(encrypted_response, client_key)
-    print(f"Decrypted response: {decrypted_response.decode()}")
-
-    # Close the connection
-    client.close()
+    finally:
+        client_socket.close()
 
 if __name__ == "__main__":
-    start_client()
+    main()

@@ -50,7 +50,21 @@ def pack_message(data_bytes, pattern, k, ncheckbytes):
 def unpack_message(packed_bytes, ncheckbytes):
     """Extracts the original message from packed bytes."""
     print(f"\nUnpacking message from packed bytes: {packed_bytes}")
-    unpacked_message = packed_bytes[1:-ncheckbytes].decode("utf-8")  # Exclude first byte (control character) and checksum
+    
+    # Check if the message has enough bytes to unpack
+    if len(packed_bytes) <= ncheckbytes + 1:
+        raise ValueError("Insufficient packed bytes to unpack message.")
+    
+    # Unpack message and exclude the control byte and checksum bytes
+    message_bytes = packed_bytes[1:-ncheckbytes]
+    print(f"Message bytes (excluding control and checksum): {message_bytes}")
+    
+    try:
+        unpacked_message = message_bytes.decode("utf-8")  # Decode the message bytes
+    except UnicodeDecodeError as e:
+        print(f"Unicode decode error: {e}")
+        unpacked_message = message_bytes  # Return raw bytes in case of decoding error
+    
     print(f"Unpacked message: {unpacked_message}")
     return unpacked_message
 
