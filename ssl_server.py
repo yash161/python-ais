@@ -2,9 +2,8 @@ import socket
 import re
 import sys
 from rsa import decrypt, encrypt
-from hash import calculate_checksum, pack_message, unpack_message
 from one_time import generate_one_time_key, encode_packet, decode_packet
-
+from hash2 import unpack_bytes
 def load_keys(filename):
     with open(filename, 'r') as file:
         content = file.read()
@@ -79,37 +78,25 @@ def main():
             d = int(server_private_key['d'])  # Assuming server_private_key is a dictionary with 'd' as a string
             n = int(server_private_key['n'])  # Assuming server_private_key is a dictionary with 'n' as a string
             print(f"{d} and {n}")
-
             username = decrypt(int.from_bytes(encrypted_username, 'big'), (server_private_key["d"], server_public_key["n"]))
             company = decrypt(int.from_bytes(encrypted_company, 'big'), (server_private_key["d"], server_public_key["n"]))
             print(f"username {username} and company :{company}")
             print("company",company,users.get(company))
             print("users",users)
-  
             if next(iter(users.values()), None) != company:
                 print("Unauthorized client!")
                 connection.close()
                 continue
-
+            print(f"key:{encrypted_key}")
             one_time_key = decrypt(int.from_bytes(encrypted_key, 'big'), (server_private_key["d"], server_public_key["n"]))
             print(f"Received one-time key: {one_time_key}")
 
             connection.sendall(b'ACK')
 
             # Receive encrypted data
-            encrypted_data = connection.recv(1024)
-            decrypted_data = decrypt(int.from_bytes(encrypted_data, 'big'), (server_private_key["d"], server_public_key["n"]))
-            print("DECR",decrypted_data)
-            # Unpack the message to get the original data and checksum
-            data, checksum = unpack_message(decrypted_data, 2)
-
-            # Verify the checksum
-            calculated_checksum = calculate_checksum(data, 123, 31, 2)
-            if checksum != calculated_checksum:
-                print("Data integrity check failed!")
-                connection.close()
-                continue
-
+            encrypted_data = connection.recv(1024).decode('utf-8')
+            print("encrypted data",encrypted_data)
+            data = unpack_bytes(encrypted_data, 13, 2, 123, 31)
             # Modify the data (convert case)
             modified_data = data.swapcase()
 

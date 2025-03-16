@@ -89,10 +89,32 @@ def text_to_int(text):
 
 # Convert an integer back to a string
 def int_to_text(number):
-    try:
-        return number.to_bytes((number.bit_length() + 7) // 8, 'big').decode('utf-8')
-    except UnicodeDecodeError:
+    print(f"🔍 Decrypted integer: {number}")
+
+    if number < 0:
+        print("⚠️ Error: Negative numbers cannot be converted to bytes.")
         return "[DECODE ERROR]"
+
+    if number == 0:
+        print("⚠️ Warning: Decrypted integer is zero, returning an empty string.")
+        return ""
+
+    try:
+        byte_length = (number.bit_length() + 7) // 8
+        byte_data = number.to_bytes(byte_length, 'big')
+
+        print(f"📦 Decoded bytes: {byte_data}")
+
+        try:
+            return byte_data.decode('utf-8')  # Primary decoding attempt
+        except UnicodeDecodeError:
+            print(f"⚠️ UTF-8 Decoding failed. Using HEX representation: {byte_data.hex()}")
+            return f"[HEX DATA] {byte_data.hex()}"
+
+    except ValueError as ve:
+        print(f"❌ ValueError: {ve}")
+        return "[DECODE ERROR]"
+
 
 # RSA Encryption
 def encrypt(message, public_key):
@@ -105,6 +127,7 @@ def encrypt(message, public_key):
 def decrypt(cipher, private_key):
     d, n = private_key
     message_int = pow(cipher, d, n)
+    print(f"🔍 Decrypted integer: {message_int}")  # Debugging
     return int_to_text(message_int)
 
 # Handle command-line arguments

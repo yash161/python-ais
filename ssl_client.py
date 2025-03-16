@@ -2,9 +2,11 @@ import socket
 import re
 import sys
 import argparse
+# from rsa2 import encrypt,decrypt
 from rsa import encrypt, decrypt
 from hash import calculate_checksum, pack_message, unpack_message
 from one_time import generate_one_time_key, encode_packet, decode_packet
+from hash2 import pack_bytes
 
 def load_keys(filename):
     with open(filename, 'r') as file:
@@ -72,21 +74,17 @@ def main():
             print("User not found in the users file.")
             client_socket.close()
             exit()
-
         one_time_key = generate_one_time_key(len(username))
-
-        # Encrypting the data to send to the server
         encrypted_username = encrypt(username, (server_public_key["e"], server_public_key["n"]))
         encrypted_company = encrypt(company,(server_public_key["e"], server_public_key["n"]))
-
         encrypted_key = encrypt(one_time_key, (server_public_key["e"], server_public_key["n"]))
+        
         print(f"Sending Data : {encrypted_username} compan:{encrypted_company} and key:{encrypted_key}")
         handshake_data = b'||'.join([encrypted_username.to_bytes((encrypted_username.bit_length() + 7) // 8, 'big'),
                                      encrypted_company.to_bytes((encrypted_company.bit_length() + 7) // 8, 'big'),
                                      encrypted_key.to_bytes((encrypted_key.bit_length() + 7) // 8, 'big')])
 
         client_socket.sendall(handshake_data)
-
         ack = client_socket.recv(1024)
         if ack != b'ACK':
             print("Handshake failed!")
@@ -94,31 +92,31 @@ def main():
             exit()
 
         # Proceed with message exchange
-        message = input("Enter the message to send: ")
+        # message = input("Enter the message to send: ")
+        message=[{
+            "",""
+        },{
+
+        }]
         message_bytes = message.encode()
 
         # Generate a one-time key for the message
         one_time_key = generate_one_time_key(len(message_bytes))
         encoded_message = encode_packet(message_bytes, one_time_key)
+        print("encoded message::",encoded_message)
+        packed_message = pack_bytes(message_bytes, 123, 31, 2, 31)
 
-        # Calculate and append the checksum
-        checksum = calculate_checksum(message_bytes, 123, 31, 2)
-        packed_message = pack_message(encoded_message, 123, 31, 2)
-
-        # Encrypt the packed message
-        encrypted_message = encrypt(packed_message, (server_public_key["e"], server_public_key["n"]))
-        client_socket.sendall(encrypted_message.to_bytes((encrypted_message.bit_length() + 7) // 8, 'big'))
+        client_socket.sendall(packed_message)
 
         # Receive the modified encrypted data
         encrypted_modified_data = client_socket.recv(1024)
-        modified_data = decrypt(int.from_bytes(encrypted_modified_data, 'big'), (server_public_key["e"], server_public_key["n"]))
+        modified_data = (int.from_bytes(encrypted_modified_data, 'big'), (server_public_key["e"], server_public_key["n"]))
 
         # Decode the modified data using the one-time key
         decoded_modified_data = decode_packet(modified_data, one_time_key).decode()
-        print(f"Received modified data: {decoded_modified_data}")
 
     finally:
         client_socket.close()
-
+    
 if __name__ == "__main__":
     main()
